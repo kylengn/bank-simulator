@@ -5,7 +5,8 @@ import { createClient } from '../../utils/supabase/client'
 
 export default function Home() {
   async function handleSignOut() {
-    await createClient().auth.signOut()
+    const supabase = createClient()
+    await supabase.auth.signOut()
     window.location.reload()
   }
 
