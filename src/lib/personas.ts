@@ -5,7 +5,7 @@ export const PERSONAS = [
 ] as const
 
 export const SCENARIOS = [
-  'Card declined overseas',
-  'Payout delayed',
-  "Can't log in after password reset",
+  'Card lost',
+  'Transfer failed',
+  'Account locked',
 ] as const
