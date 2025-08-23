@@ -4,21 +4,7 @@ import { useEffect, useState } from 'react'
 import { Button } from '@/components/ui/button'
 import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/card'
 import { createClient } from '../../../utils/supabase/client'
-
-type Run = {
-  id: string
-  persona: string
-  scenario: string
-  status: string
-  started_at: string
-}
-
-type Message = {
-  id: string
-  role: 'agent' | 'customer' | 'system'
-  content: string
-  created_at: string
-}
+import { Message, Run } from '@/lib/types'
 
 export default function DebugPage() {
   const [userEmail, setUserEmail] = useState<string | null>(null)
