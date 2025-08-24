@@ -13,6 +13,7 @@ import { Separator } from '@/components/ui/separator'
 import { Skeleton } from '@/components/ui/skeleton'
 import { toast } from "sonner"
 import { cn } from "@/lib/utils"
+import type { RealtimeChannel } from "@supabase/supabase-js"
 
 export default function RunPage() {
   const { runId } = useParams() as { runId: string }
@@ -27,6 +28,24 @@ export default function RunPage() {
   const endRef = useRef<HTMLDivElement | null>(null)
   const seedingRef = useRef<boolean>(false)
   const scrollToBottom = () => endRef.current?.scrollIntoView({ behavior: 'smooth' })
+
+  const msgMapRef = useRef<Map<string, Message>>(new Map())
+
+  function rebuildFromMap() {
+    const list = Array.from(msgMapRef.current.values())
+    list.sort((a, b) => (a.created_at ?? '').localeCompare(b.created_at ?? ''))
+    setMsgs(list)
+    setTimeout(() => endRef.current?.scrollIntoView({ behavior: 'smooth' }), 0)
+  }
+
+  function upsertMessages(newMsgs: Message | Message[]) {
+    const arr = Array.isArray(newMsgs) ? newMsgs : [newMsgs]
+    for (const m of arr) {
+      if (!m?.id) continue
+      msgMapRef.current.set(m.id, m)
+    }
+    rebuildFromMap()
+  }
 
   const currentStep = useMemo(() => {
     const withStep = msgs.filter((m) => typeof m.step_no === 'number') as Array<Message & { step_no: number }>
@@ -84,15 +103,51 @@ export default function RunPage() {
             .eq('run_id', runId)
             .order('created_at', { ascending: true })
           setMsgs((seedData ?? []) as Message[])
+          msgMapRef.current.clear()
+            ; (seedData ?? []).forEach((m: Message) => msgMapRef.current.set(m.id, m))
+          rebuildFromMap()
           seedingRef.current = false
         }
       } else {
         setMsgs(msgData as Message[])
+        msgMapRef.current.clear()
+          ; (msgData ?? []).forEach((m: Message) => msgMapRef.current.set(m.id, m))
+        rebuildFromMap()
       }
 
       setLoading(false)
       setTimeout(scrollToBottom, 0)
     })()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [runId])
+
+  useEffect(() => {
+    if (!runId) return
+    const channel: RealtimeChannel = supabase.channel(`run-${runId}`)
+
+    channel.on(
+      'postgres_changes',
+      { event: 'INSERT', schema: 'public', table: 'messages', filter: `run_id=eq.${runId}` },
+      (payload) => {
+        const m = payload.new as Message
+        upsertMessages(m)
+      }
+    )
+
+    channel.on(
+      'postgres_changes',
+      { event: 'UPDATE', schema: 'public', table: 'runs', filter: `id=eq.${runId}` },
+      (payload) => {
+        const next = payload.new as Partial<Run>
+        setRun((prev) => (prev ? { ...prev, ...next } as Run : prev))
+      }
+    )
+
+    channel.subscribe()
+
+    return () => {
+      channel.unsubscribe()
+    }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [runId])
 
@@ -123,15 +178,20 @@ export default function RunPage() {
     setSending(true)
     setError(null)
 
-    const { error: insErr } = await supabase.from('messages').insert([
-      { run_id: run.id, role: 'agent', content: text, step_no: currentStep }
-    ])
+
+    const { data: agentRows, error: insErr } = await supabase
+      .from('messages')
+      .insert([
+        { run_id: run.id, role: 'agent', content: text, step_no: currentStep }
+      ])
+      .select('id, run_id, role, content, step_no, created_at')
     if (insErr) {
       setError(insErr.message)
       toast.error('Send failed')
       setSending(false)
       return
     }
+    if (agentRows && agentRows.length) upsertMessages(agentRows[0] as Message)
 
     const { reply, nextStep, isDone } = evaluateNext({
       scenario: run.scenario,
@@ -139,15 +199,20 @@ export default function RunPage() {
       agentText: text,
     })
 
-    const { error: custErr } = await supabase.from('messages').insert([
-      { run_id: run.id, role: 'customer', content: reply, step_no: nextStep }
-    ])
+    const { data: custRows, error: custErr } = await supabase
+      .from('messages')
+      .insert([
+        { run_id: run.id, role: 'customer', content: reply, step_no: nextStep }
+      ])
+      .select('id, run_id, role, content, step_no, created_at')
+
     if (custErr) {
       setError(custErr.message)
       toast.error('Customer reply failed')
       setSending(false)
       return
     }
+    if (custRows && custRows.length) upsertMessages(custRows[0] as Message)
 
     if (isDone) {
       await supabase
@@ -158,21 +223,9 @@ export default function RunPage() {
       toast.success('Simulation complete')
     }
 
-    const { data: newMsgs, error: reloadErr } = await supabase
-      .from('messages')
-      .select('id, run_id, role, content, step_no, created_at')
-      .eq('run_id', run.id)
-      .order('created_at', { ascending: true })
-
-    if (reloadErr) {
-      setError(reloadErr.message)
-      toast.error('Reload failed')
-    }
-    setMsgs((newMsgs ?? []) as Message[])
-
     setInput('')
     setSending(false)
-    setTimeout(scrollToBottom, 0)
+    setTimeout(scrollToBottom, 100)
   }
 
   function onKeyDown(e: React.KeyboardEvent<HTMLTextAreaElement>) {
@@ -251,16 +304,16 @@ export default function RunPage() {
 
               </div>
 
-              <div className="border rounded-lg p-3 h-[50vh] overflow-y-auto space-y-3">
+              <div className="border rounded-md p-3 h-[50vh] overflow-y-auto space-y-3">
                 {msgs.map((m) => (
                   <div
                     key={m.id}
-                    className={[
+                    className={cn(
                       'rounded-md p-3 text-sm',
-                      m.role === 'agent' ? 'bg-primary/10 ml-auto max-w-[80%]' : '',
-                      m.role === 'customer' ? 'bg-muted max-w-[80%]' : '',
-                      m.role === 'system' ? 'bg-accent/20 text-muted-foreground text-xs text-center' : '',
-                    ].join(' ')}
+                      m.role === 'agent' && 'bg-primary/10 ml-auto max-w-[80%]',
+                      m.role === 'customer' && 'bg-muted max-w-[80%]',
+                      m.role === 'system' && 'bg-accent/20 text-muted-foreground text-xs text-center'
+                    )}
                     style={{ wordBreak: 'break-word' }}
                   >
                     {m.role !== 'system' && (
