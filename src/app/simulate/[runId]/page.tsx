@@ -8,6 +8,11 @@ import { Message, Run } from "@/lib/types"
 import { evaluateNext, getOpener } from "@/lib/flow"
 import { Textarea } from "@/components/ui/textarea"
 import { Button } from "@/components/ui/button"
+import { Badge } from '@/components/ui/badge'
+import { Separator } from '@/components/ui/separator'
+import { Skeleton } from '@/components/ui/skeleton'
+import { toast } from "sonner"
+import { cn } from "@/lib/utils"
 
 export default function RunPage() {
   const { runId } = useParams() as { runId: string }
@@ -48,6 +53,7 @@ export default function RunPage() {
 
       if (runErr) {
         setError(runErr.message)
+        toast.error('Run failed')
         setLoading(false)
         return
       }
@@ -122,6 +128,7 @@ export default function RunPage() {
     ])
     if (insErr) {
       setError(insErr.message)
+      toast.error('Send failed')
       setSending(false)
       return
     }
@@ -137,6 +144,7 @@ export default function RunPage() {
     ])
     if (custErr) {
       setError(custErr.message)
+      toast.error('Customer reply failed')
       setSending(false)
       return
     }
@@ -146,6 +154,8 @@ export default function RunPage() {
         .from('runs')
         .update({ status: 'ended', ended_at: new Date().toISOString() })
         .eq('id', run.id)
+
+      toast.success('Simulation complete')
     }
 
     const { data: newMsgs, error: reloadErr } = await supabase
@@ -154,7 +164,10 @@ export default function RunPage() {
       .eq('run_id', run.id)
       .order('created_at', { ascending: true })
 
-    if (reloadErr) setError(reloadErr.message)
+    if (reloadErr) {
+      setError(reloadErr.message)
+      toast.error('Reload failed')
+    }
     setMsgs((newMsgs ?? []) as Message[])
 
     setInput('')
@@ -169,6 +182,23 @@ export default function RunPage() {
     }
   }
 
+  async function endRunManually() {
+    if (!run) return
+    const { error } = await supabase
+      .from('runs')
+      .update({ status: 'ended', ended_at: new Date().toISOString() })
+      .eq('id', run.id)
+
+    if (error) {
+      setError(error.message)
+      toast.error('Failed to end run')
+      return
+    }
+
+    setRun({ ...run, status: 'ended' })
+    toast.success('Run ended')
+  }
+
 
   return (
     <div className="container mx-auto p-6">
@@ -178,13 +208,47 @@ export default function RunPage() {
         </CardHeader>
         <CardContent className="space-y-4">
           {error && <div className="text-sm text-red-600">{error}</div>}
-          {loading && <div>Loading…</div>}
+          {loading && (
+            <div className="space-y-2">
+              <Skeleton className="h-4 w-52" />
+              <Skeleton className="h-72 w-full" />
+            </div>
+          )}
 
           {!loading && run && (
             <>
               <div className="text-sm text-muted-foreground">
-                Run: <span className="font-mono">{run.id}</span> • {run.persona} • {run.scenario} •{' '}
-                <span className="uppercase">{run.status}</span>
+                <div className="flex flex-wrap items-center gap-2">
+                  <span>Run:</span>
+                  <span className="font-mono">{run.id}</span>
+                  <Separator orientation="vertical" className="h-4" />
+                  <span>{run.persona}</span>
+                  <Separator orientation="vertical" className="h-4" />
+                  <span>{run.scenario}</span>
+                </div>
+                <div className="flex items-center justify-between mt-2">
+                  <div className="flex gap-2">
+                    <Button
+                      variant="default"
+                      onClick={() => router.push('/simulate')}
+                      title="Pick a new persona/scenario"
+                    >
+                      New simulation
+                    </Button>
+                    <Button
+                      variant="secondary"
+                      onClick={endRunManually}
+                      disabled={run.status === 'ended'}
+                      title="Mark this simulation as ended"
+                    >
+                      End run
+                    </Button>
+                  </div>
+                  <Badge variant={run.status === 'ended' ? 'destructive' : 'default'} className={cn('rounded-full text-[10px] h-fit py-1 px-1.5 font-semibold', run.status !== 'ended' && "animate-pulse")}>
+                    {run.status.toUpperCase()}
+                  </Badge>
+                </div>
+
               </div>
 
               <div className="border rounded-lg p-3 h-[50vh] overflow-y-auto space-y-3">
@@ -217,11 +281,17 @@ export default function RunPage() {
                 <Textarea
                   value={input}
                   onChange={(e) => setInput(e.target.value)}
-                  placeholder="Type your reply… (Enter to send, Shift+Enter for a new line)"
+                  placeholder={
+                    run?.status === 'ended'
+                      ? 'Run has ended. Start a new simulation to continue.'
+                      : 'Type your reply… (Enter to send, Shift+Enter for a new line)'
+                  }
                   onKeyDown={onKeyDown}
+                  disabled={run?.status === 'ended'}
                 />
+
                 <div className="flex gap-2">
-                  <Button onClick={send} disabled={sending || !input.trim()}>
+                  <Button onClick={send} disabled={sending || !input.trim() || run?.status === 'ended'}>
                     {sending ? 'Sending…' : 'Send'}
                   </Button>
                   <Button

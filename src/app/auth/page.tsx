@@ -5,20 +5,15 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { supabase } from '../../../utils/supabase/client'
-import { useAlert } from '@/contexts/alert-context'
+import { toast } from "sonner"
 
 export default function AuthPage() {
   const [email, setEmail] = useState('')
   const [loading, setLoading] = useState(false)
-  const { showAlert } = useAlert()
 
   async function handleLogin() {
     if (!email.trim()) {
-      showAlert({
-        type: 'warning',
-        title: 'Invalid Email',
-        message: 'Please enter a valid email address'
-      })
+      toast.error("Invalid email")
       return
     }
 
@@ -31,17 +26,9 @@ export default function AuthPage() {
     })
 
     if (error) {
-      showAlert({
-        type: 'error',
-        title: 'Authentication Error',
-        message: error.message
-      })
+      toast.error('Authentication Error')
     } else {
-      showAlert({
-        type: 'success',
-        title: 'Magic Link Sent',
-        message: 'Check your email for the login link!'
-      })
+      toast.success('Magic Link Sent')
     }
     setLoading(false)
   }

@@ -8,6 +8,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Button } from "@/components/ui/button";
+import { toast } from "sonner";
 
 export default function SimulatePickerPage() {
   const router = useRouter()
@@ -59,10 +60,12 @@ export default function SimulatePickerPage() {
 
     if (error) {
       setError(error.message)
+      toast.error('Failed to start')
       setLoading(false)
       return
     }
 
+    toast.success('Simulation started')
     router.push(`/simulate/${data.id}`)
   }
 

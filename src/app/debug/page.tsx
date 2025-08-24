@@ -5,14 +5,16 @@ import { Button } from '@/components/ui/button'
 import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/card'
 import { supabase } from '../../../utils/supabase/client'
 import { Message, Run } from '@/lib/types'
+import { useRouter } from 'next/navigation'
 
 export default function DebugPage() {
+  const router = useRouter()
   const [userEmail, setUserEmail] = useState<string | null>(null)
   const [runs, setRuns] = useState<Run[]>([])
   const [selectedRun, setSelectedRun] = useState<string | null>(null)
   const [messages, setMessages] = useState<Message[]>([])
   const [loadingRuns, setLoadingRuns] = useState(false)
-  const [loadingMsgs, setLoadingMsgs] = useState(false)
+  const [loadingMsgs, setLoadingMsgs] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
 
   useEffect(() => {
@@ -36,17 +38,17 @@ export default function DebugPage() {
   }
 
   async function loadMessages(runId: string) {
-    setLoadingMsgs(true)
+    setLoadingMsgs(runId)
     setError(null)
     const { data, error } = await supabase
       .from('messages')
-      .select('id, role, content, created_at')
+      .select('id, run_id, role, content, step_no, created_at')
       .eq('run_id', runId)
       .order('created_at', { ascending: true })
     if (error) setError(error.message)
     setMessages(data ?? [])
     setSelectedRun(runId)
-    setLoadingMsgs(false)
+    setLoadingMsgs(null)
   }
 
   return (
@@ -86,13 +88,18 @@ export default function DebugPage() {
                     {new Date(r.started_at).toLocaleString()}
                   </div>
                 </div>
-                <Button
-                  variant="secondary"
-                  onClick={() => loadMessages(r.id)}
-                  disabled={loadingMsgs && selectedRun === r.id}
-                >
-                  {loadingMsgs && selectedRun === r.id ? 'Loading…' : 'View messages'}
-                </Button>
+                <div className='flex items-center gap-2'>
+                  <Button
+                    variant="secondary"
+                    onClick={() => loadMessages(r.id)}
+                    disabled={loadingMsgs === r.id}
+                  >
+                    {loadingMsgs === r.id ? 'Loading…' : 'View messages'}
+                  </Button>
+                  <Button variant="secondary" onClick={() => router.push(`/simulate/${r.id}`)}>
+                    Open
+                  </Button>
+                </div>
               </div>
             ))}
           </CardContent>
