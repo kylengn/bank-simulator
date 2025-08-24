@@ -1,11 +1,10 @@
 'use client'
 
 import { Button } from '@/components/ui/button'
-import { createClient } from '../../utils/supabase/client'
+import { supabase } from '../../utils/supabase/client'
 
 export default function Home() {
   async function handleSignOut() {
-    const supabase = createClient()
     await supabase.auth.signOut()
     window.location.reload()
   }

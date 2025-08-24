@@ -1,30 +1,173 @@
 'use client'
 
-import { useParams } from "next/navigation"
-import { useEffect, useState } from "react"
-import { createClient } from "../../../../utils/supabase/client"
+import { useParams, useRouter } from "next/navigation"
+import React, { useEffect, useMemo, useRef, useState } from "react"
+import { supabase } from "../../../../utils/supabase/client"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
-import { Run } from "@/lib/types"
+import { Message, Run } from "@/lib/types"
+import { evaluateNext, getOpener } from "@/lib/flow"
+import { Textarea } from "@/components/ui/textarea"
+import { Button } from "@/components/ui/button"
 
 export default function RunPage() {
-  const params = useParams() as { runId: string }
-  const runId = params.runId
+  const { runId } = useParams() as { runId: string }
+  const router = useRouter()
   const [run, setRun] = useState<Run | null>(null)
+  const [msgs, setMsgs] = useState<Message[]>([])
+  const [input, setInput] = useState<string>('')
+  const [loading, setLoading] = useState<boolean>(true)
+  const [sending, setSending] = useState<boolean>(false)
   const [error, setError] = useState<string | null>(null)
+
+  const endRef = useRef<HTMLDivElement | null>(null)
+  const seedingRef = useRef<boolean>(false)
+  const scrollToBottom = () => endRef.current?.scrollIntoView({ behavior: 'smooth' })
+
+  const currentStep = useMemo(() => {
+    const withStep = msgs.filter((m) => typeof m.step_no === 'number') as Array<Message & { step_no: number }>
+    if (withStep.length === 0) return 0
+    return Math.max(...withStep.map((m) => m.step_no))
+  }, [msgs])
 
   useEffect(() => {
     ; (async () => {
-      const supabase = createClient()
-      const { data, error } = await supabase
+      seedingRef.current = false
+
+      const { data: auth } = await supabase.auth.getUser()
+      if (!auth.user) {
+        router.replace('/auth')
+        return
+      }
+
+
+      const { data: runData, error: runErr } = await supabase
         .from('runs')
         .select('id, persona, scenario, status, started_at')
         .eq('id', runId)
         .single()
 
-      if (error) setError(error.message)
-      setRun(data)
+      if (runErr) {
+        setError(runErr.message)
+        setLoading(false)
+        return
+      }
+      setRun(runData as Run)
+
+
+      const { data: msgData, error: msgErr } = await supabase
+        .from('messages')
+        .select('id, run_id, role, content, step_no, created_at')
+        .eq('run_id', runId)
+        .order('created_at', { ascending: true })
+
+      if (msgErr) {
+        setError(msgErr.message)
+        setLoading(false)
+        return
+      }
+
+
+      if (!msgData || msgData.length === 0) {
+        if (!seedingRef.current) {
+          seedingRef.current = true
+          await seedConversation(runData as Run)
+
+          const { data: seedData } = await supabase
+            .from('messages')
+            .select('id, run_id, role, content, step_no, created_at')
+            .eq('run_id', runId)
+            .order('created_at', { ascending: true })
+          setMsgs((seedData ?? []) as Message[])
+          seedingRef.current = false
+        }
+      } else {
+        setMsgs(msgData as Message[])
+      }
+
+      setLoading(false)
+      setTimeout(scrollToBottom, 0)
     })()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [runId])
+
+
+  async function seedConversation(r: Run) {
+    const { data: existingMsgs } = await supabase
+      .from('messages')
+      .select('id')
+      .eq('run_id', r.id)
+      .limit(1)
+
+    if (existingMsgs && existingMsgs.length > 0) {
+      return
+    }
+
+    const opener = getOpener(r.scenario)
+    const { error } = await supabase.from('messages').insert([
+      { run_id: r.id, role: 'system', content: 'Simulation started', step_no: 0 },
+      { run_id: r.id, role: 'customer', content: opener, step_no: 0 },
+    ])
+    if (error) setError(error.message)
+  }
+
+
+  async function send() {
+    const text = input.trim()
+    if (!text || !run || sending) return
+    setSending(true)
+    setError(null)
+
+    const { error: insErr } = await supabase.from('messages').insert([
+      { run_id: run.id, role: 'agent', content: text, step_no: currentStep }
+    ])
+    if (insErr) {
+      setError(insErr.message)
+      setSending(false)
+      return
+    }
+
+    const { reply, nextStep, isDone } = evaluateNext({
+      scenario: run.scenario,
+      currentStep,
+      agentText: text,
+    })
+
+    const { error: custErr } = await supabase.from('messages').insert([
+      { run_id: run.id, role: 'customer', content: reply, step_no: nextStep }
+    ])
+    if (custErr) {
+      setError(custErr.message)
+      setSending(false)
+      return
+    }
+
+    if (isDone) {
+      await supabase
+        .from('runs')
+        .update({ status: 'ended', ended_at: new Date().toISOString() })
+        .eq('id', run.id)
+    }
+
+    const { data: newMsgs, error: reloadErr } = await supabase
+      .from('messages')
+      .select('id, run_id, role, content, step_no, created_at')
+      .eq('run_id', run.id)
+      .order('created_at', { ascending: true })
+
+    if (reloadErr) setError(reloadErr.message)
+    setMsgs((newMsgs ?? []) as Message[])
+
+    setInput('')
+    setSending(false)
+    setTimeout(scrollToBottom, 0)
+  }
+
+  function onKeyDown(e: React.KeyboardEvent<HTMLTextAreaElement>) {
+    if (e.key === 'Enter' && !e.shiftKey) {
+      e.preventDefault()
+      void send()
+    }
+  }
 
 
   return (
@@ -33,16 +176,62 @@ export default function RunPage() {
         <CardHeader>
           <CardTitle>Simulation</CardTitle>
         </CardHeader>
-        <CardContent className="space-y-2">
+        <CardContent className="space-y-4">
           {error && <div className="text-sm text-red-600">{error}</div>}
-          {!run && !error && <div>Loading run…</div>}
-          {run && (
+          {loading && <div>Loading…</div>}
+
+          {!loading && run && (
             <>
-              <div className="text-sm text-muted-foreground">Run ID: {run.id}</div>
-              <div className="text-lg font-semibold">{run.persona}</div>
-              <div className="text-base">{run.scenario}</div>
-              <div className="text-xs text-muted-foreground">
-                {new Date(run.started_at).toLocaleString()} • {run.status}
+              <div className="text-sm text-muted-foreground">
+                Run: <span className="font-mono">{run.id}</span> • {run.persona} • {run.scenario} •{' '}
+                <span className="uppercase">{run.status}</span>
+              </div>
+
+              <div className="border rounded-lg p-3 h-[50vh] overflow-y-auto space-y-3">
+                {msgs.map((m) => (
+                  <div
+                    key={m.id}
+                    className={[
+                      'rounded-md p-3 text-sm',
+                      m.role === 'agent' ? 'bg-primary/10 ml-auto max-w-[80%]' : '',
+                      m.role === 'customer' ? 'bg-muted max-w-[80%]' : '',
+                      m.role === 'system' ? 'bg-accent/20 text-muted-foreground text-xs text-center' : '',
+                    ].join(' ')}
+                    style={{ wordBreak: 'break-word' }}
+                  >
+                    {m.role !== 'system' && (
+                      <div className="text-[10px] uppercase tracking-wide mb-1 text-muted-foreground">
+                        {m.role} {typeof m.step_no === 'number' ? `(step ${m.step_no})` : ''}
+                      </div>
+                    )}
+                    <div className={m.role === 'system' ? 'italic' : ''}>{m.content}</div>
+                  </div>
+                ))}
+                <div ref={endRef} />
+              </div>
+
+              <div className="space-y-2">
+                <div className="text-xs text-muted-foreground">
+                  You’re on <strong>step {currentStep}</strong>. Hint: use keywords defined for this step in the rules.
+                </div>
+                <Textarea
+                  value={input}
+                  onChange={(e) => setInput(e.target.value)}
+                  placeholder="Type your reply… (Enter to send, Shift+Enter for a new line)"
+                  onKeyDown={onKeyDown}
+                />
+                <div className="flex gap-2">
+                  <Button onClick={send} disabled={sending || !input.trim()}>
+                    {sending ? 'Sending…' : 'Send'}
+                  </Button>
+                  <Button
+                    variant="secondary"
+                    onClick={() => window.location.reload()}
+                    title="Quick reset if the UI gets out of sync"
+                  >
+                    Refresh
+                  </Button>
+                </div>
               </div>
             </>
           )}

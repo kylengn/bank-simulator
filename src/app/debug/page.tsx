@@ -3,7 +3,7 @@
 import { useEffect, useState } from 'react'
 import { Button } from '@/components/ui/button'
 import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/card'
-import { createClient } from '../../../utils/supabase/client'
+import { supabase } from '../../../utils/supabase/client'
 import { Message, Run } from '@/lib/types'
 
 export default function DebugPage() {
@@ -17,7 +17,6 @@ export default function DebugPage() {
 
   useEffect(() => {
     ; (async () => {
-      const supabase = createClient()
       const { data } = await supabase.auth.getUser()
       setUserEmail(data.user?.email ?? null)
       await loadRuns()
@@ -27,7 +26,6 @@ export default function DebugPage() {
   async function loadRuns() {
     setLoadingRuns(true)
     setError(null)
-    const supabase = createClient()
     const { data, error } = await supabase
       .from('runs')
       .select('id, persona, scenario, status, started_at')
@@ -40,7 +38,6 @@ export default function DebugPage() {
   async function loadMessages(runId: string) {
     setLoadingMsgs(true)
     setError(null)
-    const supabase = createClient()
     const { data, error } = await supabase
       .from('messages')
       .select('id, role, content, created_at')

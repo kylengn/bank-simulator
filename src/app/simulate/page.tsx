@@ -3,7 +3,7 @@
 import { PERSONAS, SCENARIOS } from "@/lib/personas";
 import { useRouter } from "next/navigation"
 import { useEffect, useState } from "react"
-import { createClient } from "../../../utils/supabase/client";
+import { supabase } from "../../../utils/supabase/client";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
@@ -19,7 +19,6 @@ export default function SimulatePickerPage() {
 
   useEffect(() => {
     ; (async () => {
-      const supabase = createClient()
       const { data } = await supabase.auth.getUser()
       if (!data.user) {
         router.replace('/auth')
@@ -45,7 +44,6 @@ export default function SimulatePickerPage() {
     setLoading(true)
     setError(null)
 
-    const supabase = createClient()
     const { data, error } = await supabase
       .from('runs')
       .insert([

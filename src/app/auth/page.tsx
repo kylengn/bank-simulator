@@ -4,7 +4,7 @@ import { useState } from 'react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
-import { createClient } from '../../../utils/supabase/client'
+import { supabase } from '../../../utils/supabase/client'
 import { useAlert } from '@/contexts/alert-context'
 
 export default function AuthPage() {
@@ -23,7 +23,6 @@ export default function AuthPage() {
     }
 
     setLoading(true)
-    const supabase = createClient()
     const { error } = await supabase.auth.signInWithOtp({
       email,
       options: {
