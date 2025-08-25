@@ -26,7 +26,6 @@ export default function ChatView({ messages, className }: ChatViewProps) {
     if (last && last.role === 'customer' && last.content) {
       if (lastSpokenMessageId.current !== last.id) {
         lastSpokenMessageId.current = last.id
-        // Add delay to prevent audio cutoff at the start
         setTimeout(() => {
           const u = new SpeechSynthesisUtterance(last.content)
           window.speechSynthesis.speak(u)
