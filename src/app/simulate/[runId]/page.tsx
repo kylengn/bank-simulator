@@ -14,6 +14,10 @@ import { Skeleton } from '@/components/ui/skeleton'
 import { toast } from "sonner"
 import { cn } from "@/lib/utils"
 import type { RealtimeChannel } from "@supabase/supabase-js"
+import ChatView from "@/components/chat/chat-view"
+import Composer from "@/components/chat/composer"
+import { Switch } from "@/components/ui/switch"
+import { Label } from "@/components/ui/label"
 
 export default function RunPage() {
   const { runId } = useParams() as { runId: string }
@@ -24,10 +28,9 @@ export default function RunPage() {
   const [loading, setLoading] = useState<boolean>(true)
   const [sending, setSending] = useState<boolean>(false)
   const [error, setError] = useState<string | null>(null)
+  const [useMultimediaInput, setUseMultimediaInput] = useState<boolean>(false)
 
-  const endRef = useRef<HTMLDivElement | null>(null)
   const seedingRef = useRef<boolean>(false)
-  const scrollToBottom = () => endRef.current?.scrollIntoView({ behavior: 'smooth' })
 
   const msgMapRef = useRef<Map<string, Message>>(new Map())
 
@@ -35,7 +38,6 @@ export default function RunPage() {
     const list = Array.from(msgMapRef.current.values())
     list.sort((a, b) => (a.created_at ?? '').localeCompare(b.created_at ?? ''))
     setMsgs(list)
-    setTimeout(() => endRef.current?.scrollIntoView({ behavior: 'smooth' }), 0)
   }
 
   function upsertMessages(newMsgs: Message | Message[]) {
@@ -116,7 +118,6 @@ export default function RunPage() {
       }
 
       setLoading(false)
-      setTimeout(scrollToBottom, 0)
     })()
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [runId])
@@ -172,9 +173,8 @@ export default function RunPage() {
   }
 
 
-  async function send() {
-    const text = input.trim()
-    if (!text || !run || sending) return
+  async function sendMessage(messageText: string) {
+    if (!messageText.trim() || !run || sending) return
     setSending(true)
     setError(null)
 
@@ -182,7 +182,7 @@ export default function RunPage() {
     const { data: agentRows, error: insErr } = await supabase
       .from('messages')
       .insert([
-        { run_id: run.id, role: 'agent', content: text, step_no: currentStep }
+        { run_id: run.id, role: 'agent', content: messageText, step_no: currentStep }
       ])
       .select('id, run_id, role, content, step_no, created_at')
     if (insErr) {
@@ -196,7 +196,7 @@ export default function RunPage() {
     const { reply, nextStep, isDone } = evaluateNext({
       scenario: run.scenario,
       currentStep,
-      agentText: text,
+      agentText: messageText,
     })
 
     const { data: custRows, error: custErr } = await supabase
@@ -225,7 +225,20 @@ export default function RunPage() {
 
     setInput('')
     setSending(false)
-    setTimeout(scrollToBottom, 100)
+  }
+
+  // Original send function for text input
+  async function send() {
+    await sendMessage(input.trim())
+  }
+
+  // Handler for multimedia messages from Composer
+  async function handleComposerMessage(content: string, kind: 'text' | 'audio') {
+    if (kind === 'audio') {
+      return
+    }
+
+    await sendMessage(content)
   }
 
   function onKeyDown(e: React.KeyboardEvent<HTMLTextAreaElement>) {
@@ -304,57 +317,74 @@ export default function RunPage() {
 
               </div>
 
-              <div className="border rounded-md p-3 h-[50vh] overflow-y-auto space-y-3">
-                {msgs.map((m) => (
-                  <div
-                    key={m.id}
-                    className={cn(
-                      'rounded-md p-3 text-sm',
-                      m.role === 'agent' && 'bg-primary/10 ml-auto max-w-[80%]',
-                      m.role === 'customer' && 'bg-muted max-w-[80%]',
-                      m.role === 'system' && 'bg-accent/20 text-muted-foreground text-xs text-center'
-                    )}
-                    style={{ wordBreak: 'break-word' }}
-                  >
-                    {m.role !== 'system' && (
-                      <div className="text-[10px] uppercase tracking-wide mb-1 text-muted-foreground">
-                        {m.role} {typeof m.step_no === 'number' ? `(step ${m.step_no})` : ''}
-                      </div>
-                    )}
-                    <div className={m.role === 'system' ? 'italic' : ''}>{m.content}</div>
-                  </div>
-                ))}
-                <div ref={endRef} />
-              </div>
+              <ChatView messages={msgs} />
 
-              <div className="space-y-2">
+              <div className="space-y-3">
                 <div className="text-xs text-muted-foreground">
-                  You’re on <strong>step {currentStep}</strong>. Hint: use keywords defined for this step in the rules.
+                  You&apos;re on <strong>step {currentStep}</strong>. Hint: use keywords defined for this step in the rules.
                 </div>
-                <Textarea
-                  value={input}
-                  onChange={(e) => setInput(e.target.value)}
-                  placeholder={
-                    run?.status === 'ended'
-                      ? 'Run has ended. Start a new simulation to continue.'
-                      : 'Type your reply… (Enter to send, Shift+Enter for a new line)'
-                  }
-                  onKeyDown={onKeyDown}
-                  disabled={run?.status === 'ended'}
-                />
 
-                <div className="flex gap-2">
-                  <Button onClick={send} disabled={sending || !input.trim() || run?.status === 'ended'}>
-                    {sending ? 'Sending…' : 'Send'}
-                  </Button>
-                  <Button
-                    variant="secondary"
-                    onClick={() => window.location.reload()}
-                    title="Quick reset if the UI gets out of sync"
-                  >
-                    Refresh
-                  </Button>
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-2">
+                    <Switch
+                      id="multimedia-input"
+                      checked={useMultimediaInput}
+                      onCheckedChange={setUseMultimediaInput}
+                      disabled={run?.status === 'ended'}
+                    />
+                    <Label htmlFor="multimedia-input" className="text-sm">
+                      {useMultimediaInput ? 'Multimedia input (text + audio)' : 'Simple text input'}
+                    </Label>
+                  </div>
                 </div>
+
+                {useMultimediaInput ? (
+                  <div className="space-y-2">
+                    <Composer
+                      runId={runId}
+                      currentStep={currentStep}
+                      disabled={run?.status === 'ended'}
+                      onMessageSent={handleComposerMessage}
+                      skipDirectInsert={true}
+                    />
+                    <div className="flex justify-end">
+                      <Button
+                        variant="secondary"
+                        onClick={() => window.location.reload()}
+                        title="Quick reset if the UI gets out of sync"
+                      >
+                        Refresh
+                      </Button>
+                    </div>
+                  </div>
+                ) : (
+                  <>
+                    <Textarea
+                      value={input}
+                      onChange={(e) => setInput(e.target.value)}
+                      placeholder={
+                        run?.status === 'ended'
+                          ? 'Run has ended. Start a new simulation to continue.'
+                          : 'Type your reply… (Enter to send, Shift+Enter for a new line)'
+                      }
+                      onKeyDown={onKeyDown}
+                      disabled={run?.status === 'ended'}
+                    />
+
+                    <div className="flex gap-2">
+                      <Button onClick={send} disabled={sending || !input.trim() || run?.status === 'ended'}>
+                        {sending ? 'Sending…' : 'Send'}
+                      </Button>
+                      <Button
+                        variant="secondary"
+                        onClick={() => window.location.reload()}
+                        title="Quick reset if the UI gets out of sync"
+                      >
+                        Refresh
+                      </Button>
+                    </div>
+                  </>
+                )}
               </div>
             </>
           )}
