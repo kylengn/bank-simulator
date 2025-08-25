@@ -27,26 +27,33 @@ export default function Composer({ runId, currentStep = 0, disabled = false, onM
       return
     }
 
-    const { error } = await supabase.from('messages').insert([
-      {
-        run_id: runId,
-        role: 'agent',
-        content: messageText,
-        kind: 'text',
-        step_no: currentStep
-      }
-    ])
-
-    if (error) {
-      toast.error('Failed to send message', {
-        description: error.message
+    try {
+      const response = await fetch(`/api/simulate/${runId}/message`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          content: messageText,
+          kind: 'text',
+          step_no: currentStep
+        })
       })
-      return
+
+      const result = await response.json()
+
+      if (!response.ok) {
+        throw new Error(result.error || 'Failed to send message')
+      }
+
+      toast.success('Message sent')
+      onMessageSent?.(messageText, 'text')
+    } catch (error) {
+      const errorMessage = error instanceof Error ? error.message : 'Unknown error'
+      toast.error('Failed to send message', {
+        description: errorMessage
+      })
     }
-
-    toast.success('Message sent')
-
-    onMessageSent?.(messageText, 'text')
   }
 
   async function handleAudioUploaded({ url, mime, duration }: { url: string, mime: string, duration: number }) {

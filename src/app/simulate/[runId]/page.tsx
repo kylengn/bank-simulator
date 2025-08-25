@@ -5,7 +5,7 @@ import React, { useEffect, useMemo, useRef, useState } from "react"
 import { supabase } from "../../../../utils/supabase/client"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Message, Run } from "@/lib/types"
-import { evaluateNext, getOpener } from "@/lib/flow"
+import { getOpener } from "@/lib/flow"
 import { Textarea } from "@/components/ui/textarea"
 import { Button } from "@/components/ui/button"
 import { Badge } from '@/components/ui/badge'
@@ -178,61 +178,54 @@ export default function RunPage() {
     setSending(true)
     setError(null)
 
+    try {
+      const response = await fetch(`/api/simulate/${run.id}/message`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          content: messageText,
+          kind: 'text',
+          step_no: currentStep
+        })
+      })
 
-    const { data: agentRows, error: insErr } = await supabase
-      .from('messages')
-      .insert([
-        { run_id: run.id, role: 'agent', content: messageText, step_no: currentStep }
-      ])
-      .select('id, run_id, role, content, step_no, created_at')
-    if (insErr) {
-      setError(insErr.message)
-      toast.error('Send failed')
+      const result = await response.json()
+
+      if (!response.ok) {
+        throw new Error(result.error || 'Failed to send message')
+      }
+
+      if (result.agentMessage) {
+        upsertMessages(result.agentMessage as Message)
+      }
+      if (result.customerMessage) {
+        upsertMessages(result.customerMessage as Message)
+      }
+
+      if (result.flowResult && result.flowResult.isDone) {
+        setRun(prev => prev ? { ...prev, status: 'ended' } : prev)
+        toast.success('Simulation complete')
+      }
+
+      setInput('')
+    } catch (error) {
+      const errorMessage = error instanceof Error ? error.message : 'Unknown error'
+      setError(errorMessage)
+      toast.error('Send failed', {
+        description: errorMessage
+      })
+    } finally {
       setSending(false)
-      return
     }
-    if (agentRows && agentRows.length) upsertMessages(agentRows[0] as Message)
-
-    const { reply, nextStep, isDone } = evaluateNext({
-      scenario: run.scenario,
-      currentStep,
-      agentText: messageText,
-    })
-
-    const { data: custRows, error: custErr } = await supabase
-      .from('messages')
-      .insert([
-        { run_id: run.id, role: 'customer', content: reply, step_no: nextStep }
-      ])
-      .select('id, run_id, role, content, step_no, created_at')
-
-    if (custErr) {
-      setError(custErr.message)
-      toast.error('Customer reply failed')
-      setSending(false)
-      return
-    }
-    if (custRows && custRows.length) upsertMessages(custRows[0] as Message)
-
-    if (isDone) {
-      await supabase
-        .from('runs')
-        .update({ status: 'ended', ended_at: new Date().toISOString() })
-        .eq('id', run.id)
-
-      toast.success('Simulation complete')
-    }
-
-    setInput('')
-    setSending(false)
   }
 
-  // Original send function for text input
   async function send() {
     await sendMessage(input.trim())
   }
 
-  // Handler for multimedia messages from Composer
+
   async function handleComposerMessage(content: string, kind: 'text' | 'audio') {
     if (kind === 'audio') {
       return
