@@ -205,6 +205,36 @@ Landing Page → Email Auth → Simulation Setup → Chat Interface
 
 Each simulation randomly picks one persona + one scenario. The conversation follows a rule-based flow where the "customer" responds based on specific keywords the agent mentions, advancing through structured steps toward resolution.
 
+### How the Flow Works ‼️
+
+**For Agents (Users):** To succeed in each scenario, you need to mention specific keywords at each step. The customer will respond positively when you hit the right keywords, or give you hints when you miss them.
+
+**Example - "Card Lost" Scenario Flow:**
+
+**Step 1: Verify Identity** 
+- **Goal**: Show empathy and gather verification details
+- **Keywords to mention**: "verify", "security", "full name", "date of birth", "help", "understand"
+- **✅ Success**: Customer provides name and DOB, asks you to block the card
+- **❌ Miss**: Customer stays panicked, asks what verification you need
+
+**Step 2: Block the Card**
+- **Goal**: Confirm card details and take action  
+- **Keywords to mention**: "card number", "last 4 digits", "block", "freeze", "protect"
+- **✅ Success**: Customer gives last 4 digits, asks about replacement timeline
+- **❌ Miss**: Customer worries about fraud, asks about the blocking process
+
+**Step 3: Arrange Replacement**
+- **Goal**: Explain replacement process and options
+- **Keywords to mention**: "replacement", "new card", "expedite", "timeline", "delivery", "address"
+- **✅ Success**: Customer requests expedited delivery, conversation concludes
+- **❌ Miss**: Customer asks how long it takes and if you can rush it
+
+**💡 Pro Tips:**
+- Each scenario has 3 structured steps that mirror real banking protocols
+- Listen to customer hints in their responses - they guide you to the right keywords
+- The step indicator shows your progress: "You're on step X"
+- Practice different approaches to see how keyword matching works
+
 ## Implemented Extensions
 
 **Chose: Audio and/or Video**
