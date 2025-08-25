@@ -9,25 +9,22 @@ import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Button } from "@/components/ui/button";
 import { toast } from "sonner";
+import { useAuth } from "@/components/auth/auth-provider";
+import { Spinner } from "@/components/ui/spinner";
 
 export default function SimulatePickerPage() {
   const router = useRouter()
-  const [userId, setUserId] = useState<string | null>(null)
+  const { user, loading: authLoading } = useAuth()
   const [persona, setPersona] = useState<string>(PERSONAS[0])
   const [scenario, setScenario] = useState<string>(SCENARIOS[0])
   const [loading, setLoading] = useState<boolean>(false)
   const [error, setError] = useState<string | null>(null)
 
   useEffect(() => {
-    ; (async () => {
-      const { data } = await supabase.auth.getUser()
-      if (!data.user) {
-        router.replace('/auth')
-        return
-      }
-      setUserId(data.user.id)
-    })()
-  }, [router])
+    if (!authLoading && !user) {
+      router.replace('/auth')
+    }
+  }, [user, authLoading, router])
 
   function randomize() {
     const p = PERSONAS[Math.floor(Math.random() * PERSONAS.length)]
@@ -37,7 +34,7 @@ export default function SimulatePickerPage() {
   }
 
   async function startSimulation() {
-    if (!userId) {
+    if (!user) {
       setError('You are not signed in. Redirecting to /auth...')
       router.replace('/auth')
       return
@@ -49,7 +46,7 @@ export default function SimulatePickerPage() {
       .from('runs')
       .insert([
         {
-          user_id: userId,
+          user_id: user.id,
           persona,
           scenario,
           status: 'active'
@@ -67,6 +64,16 @@ export default function SimulatePickerPage() {
 
     toast.success('Simulation started')
     router.push(`/simulate/${data.id}`)
+  }
+
+  if (authLoading) {
+    return (
+      <Spinner />
+    )
+  }
+
+  if (!user) {
+    return null
   }
 
   return (

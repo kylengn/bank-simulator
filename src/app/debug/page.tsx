@@ -6,10 +6,12 @@ import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/card'
 import { supabase } from '../../../utils/supabase/client'
 import { Message, Run } from '@/lib/types'
 import { useRouter } from 'next/navigation'
+import { useAuth } from '@/components/auth/auth-provider'
+import { Spinner } from '@/components/ui/spinner'
 
 export default function DebugPage() {
   const router = useRouter()
-  const [userEmail, setUserEmail] = useState<string | null>(null)
+  const { user, loading: authLoading } = useAuth()
   const [runs, setRuns] = useState<Run[]>([])
   const [selectedRun, setSelectedRun] = useState<string | null>(null)
   const [messages, setMessages] = useState<Message[]>([])
@@ -18,12 +20,14 @@ export default function DebugPage() {
   const [error, setError] = useState<string | null>(null)
 
   useEffect(() => {
-    ; (async () => {
-      const { data } = await supabase.auth.getUser()
-      setUserEmail(data.user?.email ?? null)
-      await loadRuns()
-    })()
-  }, [])
+    if (!authLoading && !user) {
+      router.replace('/auth')
+      return
+    }
+    if (user) {
+      loadRuns()
+    }
+  }, [user, authLoading, router])
 
   async function loadRuns() {
     setLoadingRuns(true)
@@ -51,6 +55,16 @@ export default function DebugPage() {
     setLoadingMsgs(null)
   }
 
+  if (authLoading) {
+    return (
+      <Spinner />
+    )
+  }
+
+  if (!user) {
+    return null
+  }
+
   return (
     <div className="container mx-auto p-6 space-y-6">
       <Card>
@@ -58,7 +72,7 @@ export default function DebugPage() {
           <CardTitle>Debug / Preview</CardTitle>
         </CardHeader>
         <CardContent className="space-y-2">
-          <div>Signed in as: {userEmail ?? 'not signed in (go to /auth)'}</div>
+          <div>Signed in as: {user?.email ?? 'not signed in (go to /auth)'}</div>
           <div className="flex gap-2">
             <Button onClick={loadRuns} disabled={loadingRuns}>
               {loadingRuns ? 'Loading runs…' : 'Refresh Runs'}

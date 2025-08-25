@@ -10,7 +10,6 @@ import { Textarea } from "@/components/ui/textarea"
 import { Button } from "@/components/ui/button"
 import { Badge } from '@/components/ui/badge'
 import { Separator } from '@/components/ui/separator'
-import { Skeleton } from '@/components/ui/skeleton'
 import { toast } from "sonner"
 import { cn } from "@/lib/utils"
 import type { RealtimeChannel } from "@supabase/supabase-js"
@@ -18,10 +17,14 @@ import ChatView from "@/components/chat/chat-view"
 import Composer from "@/components/chat/composer"
 import { Switch } from "@/components/ui/switch"
 import { Label } from "@/components/ui/label"
+import { useAuth } from "@/components/auth/auth-provider"
+import { Spinner } from "@/components/ui/spinner"
+import { RotateCw } from "lucide-react"
 
 export default function RunPage() {
   const { runId } = useParams() as { runId: string }
   const router = useRouter()
+  const { user, loading: authLoading } = useAuth()
   const [run, setRun] = useState<Run | null>(null)
   const [msgs, setMsgs] = useState<Message[]>([])
   const [input, setInput] = useState<string>('')
@@ -56,14 +59,15 @@ export default function RunPage() {
   }, [msgs])
 
   useEffect(() => {
+    if (authLoading || !user) {
+      if (!authLoading && !user) {
+        router.replace('/auth')
+      }
+      return
+    }
+
     ; (async () => {
       seedingRef.current = false
-
-      const { data: auth } = await supabase.auth.getUser()
-      if (!auth.user) {
-        router.replace('/auth')
-        return
-      }
 
 
       const { data: runData, error: runErr } = await supabase
@@ -120,7 +124,7 @@ export default function RunPage() {
       setLoading(false)
     })()
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [runId])
+  }, [runId, user, authLoading])
 
   useEffect(() => {
     if (!runId) return
@@ -258,6 +262,15 @@ export default function RunPage() {
     toast.success('Run ended')
   }
 
+  if (authLoading || loading) {
+    return (
+      <Spinner />
+    )
+  }
+
+  if (!user) {
+    return null // Will redirect in useEffect
+  }
 
   return (
     <div className="container mx-auto p-6">
@@ -267,12 +280,6 @@ export default function RunPage() {
         </CardHeader>
         <CardContent className="space-y-4">
           {error && <div className="text-sm text-red-600">{error}</div>}
-          {loading && (
-            <div className="space-y-2">
-              <Skeleton className="h-4 w-52" />
-              <Skeleton className="h-72 w-full" />
-            </div>
-          )}
 
           {!loading && run && (
             <>
@@ -340,13 +347,14 @@ export default function RunPage() {
                       onMessageSent={handleComposerMessage}
                       skipDirectInsert={true}
                     />
-                    <div className="flex justify-end">
+                    <div className="flex justify-start">
                       <Button
                         variant="secondary"
                         onClick={() => window.location.reload()}
                         title="Quick reset if the UI gets out of sync"
                       >
-                        Refresh
+                        <RotateCw className="h-4 w-4" />
+                        <span>Refresh</span>
                       </Button>
                     </div>
                   </div>
@@ -373,7 +381,8 @@ export default function RunPage() {
                         onClick={() => window.location.reload()}
                         title="Quick reset if the UI gets out of sync"
                       >
-                        Refresh
+                        <RotateCw className="h-4 w-4" />
+                        <span>Refresh</span>
                       </Button>
                     </div>
                   </>
